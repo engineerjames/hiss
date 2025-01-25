@@ -1,8 +1,12 @@
 from ollama import chat
 from ollama import ChatResponse
+from ollama import AsyncClient
 from nicegui import ui
 from nicegui.events import ValueChangeEventArguments
 
+#chat()
+#ollama = AsyncClient(base_url="http://<remote-server-ip>:11434")
+#OLLAMA_HOST
 # response: ChatResponse = chat(model='deepseek-r1:32b', messages=[
 #   {
 #     'role': 'user',
@@ -28,4 +32,4 @@ with ui.row():
     ui.select(['One', 'Two'], value='One', on_change=show)
 ui.link('And many more...', '/documentation').classes('mt-8')
 
-ui.run()
+ui.run(native=True)

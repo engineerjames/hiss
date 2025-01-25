@@ -7,4 +7,5 @@ requires-python = ">=3.11"
 dependencies = [
     "nicegui>=2.10.1",
     "ollama>=0.4.7",
+    "pywebview>=5.3.2",
 ]
