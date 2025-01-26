@@ -1,4 +1,15 @@
 {
-    "workbench.iconTheme": "eq-material-theme-icons",
-    "python.languageServer": "Pylance"
+    "editor.formatOnSave": true,
+    "ruff.organizeImports": true,
+    "editor.codeActionsOnSave": {
+    "source.organizeImports": "always",
+  },
+  "python.testing.pytestArgs": [
+    "-s"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.analysis.languageServerMode": "full",
+  "python.languageServer": "Pylance",
+  "python.envFile": "${workspaceFolder}/.env"
 }
