@@ -1,35 +1,89 @@
+import asyncio
+import datetime
+from typing import Any, AsyncIterator, Coroutine
+
 from nicegui import Client, ui
-from nicegui.events import ValueChangeEventArguments
-from ollama import AsyncClient, ChatResponse, chat
+from ollama import AsyncClient, ChatResponse, ListResponse, Message
 
-import home
-from ui import UI
-
-# chat()
-# ollama = AsyncClient(base_url="http://<remote-server-ip>:11434")
-# OLLAMA_HOST
-# response: ChatResponse = chat(model='deepseek-r1:32b', messages=[
-#   {
-#     'role': 'user',
-#     'content': 'Why is the sky blue?',
-#   },
-# ])
-# #print(response['message']['content'])
-# # or access fields directly from the response object
-# print(response.message.content)
+messages: list[tuple[str, str]] = []
 
 
-class HissApp:
-    def __init__(self) -> None:
-        self.main_ui = UI()
-        self.main_ui.generate_ui()
+@ui.refreshable
+def chat_messages(own_id: str = "") -> None:
+    if messages:
+        for text, stamp in messages:
+            ui.chat_message(text=text, stamp=stamp, sent=own_id == "me")
+    else:
+        ui.label("No messages yet").classes("mx-auto my-36")
+    ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)")
+
+
+async def get_models() -> ListResponse:
+    ollama = AsyncClient(host="10.0.0.10")
+    return await ollama.list()
+
+
+async def get_response(text: str, model_name: str) -> AsyncIterator[ChatResponse]:
+    ollama = AsyncClient(host="10.0.0.10")
+    async for response in await ollama.chat(
+        model=model_name, stream=True, messages=[Message(role="user", content=text)]
+    ):
+        yield response
+
+
+class State:
+    selected_model_name: str | None = None
+
+
+id_to_state: dict[str, State] = {}
 
 
 @ui.page("/")
 async def main_page(client: Client) -> None:
+    def send(text: ui.input) -> None:
+        stamp = datetime.datetime.now(tz=datetime.UTC).strftime("%X")
+        messages.append((text.value, stamp))
+        text.value = ""
+        chat_messages.refresh()
+
+    with ui.header().classes("flex items-center justify-between"):
+        ui.label("hiss").classes("lg:text-xl font-bold font-sans vertical-align")
+
+        ui.space()
+
+        ui.button().props("flat color=white icon=settings").classes("ml-auto").on_click(
+            lambda: right_drawer.toggle(),  # type: ignore[has-type]
+        )
+
+    with ui.right_drawer(value=False, bordered=True) as right_drawer:
+        ui.label("Loading model list...").classes("text-center")
+        ui.skeleton("rect").classes("w-64")
+
+        ui.add_css(r"a:link, a:visited {color: inherit !important; text-decoration: none; font-weight: 500}")
+    with ui.row().classes("w-full no-wrap items-center"):
+        text = (
+            ui.input(placeholder="What would you like to know?").props("outlined input-class=mx-3").classes("flex-grow")
+        )
+        text.on("keydown.enter", lambda: send(text))
+
     await client.connected()
 
-    app = HissApp()
+    with ui.column().classes("w-full max-w-2xl mx-auto items-stretch"):
+        chat_messages()
+
+    if ui.context.client.id not in id_to_state:
+        id_to_state[ui.context.client.id] = State()
+
+    client_state = id_to_state[ui.context.client.id]
+
+    models = await get_models()
+
+    right_drawer.clear()
+    with right_drawer:
+        ui.select(options=[m.model for m in models.models], label="Model").classes("w-64").bind_value_to(
+            client_state,
+            "selected_model_name",
+        )
 
 
 if __name__ in {"__main__", "__mp_main__"}:
