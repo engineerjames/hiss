@@ -1,6 +1,6 @@
-import asyncio
 import datetime
-from typing import Any, AsyncIterator, Coroutine
+import logging
+from collections.abc import AsyncIterator
 
 from nicegui import Client, ui
 from ollama import AsyncClient, ChatResponse, ListResponse, Message
@@ -26,7 +26,9 @@ async def get_models() -> ListResponse:
 async def get_response(text: str, model_name: str) -> AsyncIterator[ChatResponse]:
     ollama = AsyncClient(host="10.0.0.10")
     async for response in await ollama.chat(
-        model=model_name, stream=True, messages=[Message(role="user", content=text)]
+        model=model_name,
+        stream=True,
+        messages=[Message(role="user", content=text)],
     ):
         yield response
 
@@ -86,5 +88,30 @@ async def main_page(client: Client) -> None:
         )
 
 
+async def test_run() -> None:
+    models = await get_models()
+    the_model = models.models[0].model
+
+    if the_model is None:
+        logger.error("No model found")
+        return
+
+    is_thinking = False
+    async for response in get_response("What is 1+1?", the_model):
+        content = response.message.content
+        if not content:
+            continue
+
+        if content.strip() == "<think>":
+            is_thinking = True
+        elif content.strip() == "</think>":
+            is_thinking = False
+        elif not is_thinking:
+            logger.info(content, end="")
+
+
 if __name__ in {"__main__", "__mp_main__"}:
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
     ui.run(native=True, dark=True, frameless=False, window_size=(1024, 768))
