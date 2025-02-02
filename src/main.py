@@ -1,18 +1,20 @@
 import datetime
 import logging
+from asyncio.tasks import Task, create_task
 from collections.abc import AsyncIterator
+from typing import Any
 
 from nicegui import Client, ui
 from ollama import AsyncClient, ChatResponse, ListResponse, Message
 
-messages: list[tuple[str, str]] = []
+messages: list[tuple[str, str, str]] = []
 
 
 @ui.refreshable
-def chat_messages(own_id: str = "") -> None:
+def chat_messages(client_id: str) -> None:
     if messages:
-        for text, stamp in messages:
-            ui.chat_message(text=text, stamp=stamp, sent=own_id == "me")
+        for text, stamp, sent_id in messages:
+            ui.chat_message(text=text, stamp=stamp, sent=sent_id == client_id)
     else:
         ui.label("No messages yet").classes("mx-auto my-36")
     ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)")
@@ -33,18 +35,59 @@ async def get_response(text: str, model_name: str) -> AsyncIterator[ChatResponse
         yield response
 
 
+async def process_response(text: str, model_name: str) -> None:
+    is_thinking = False
+    messages.append(("", datetime.datetime.now(tz=datetime.UTC).strftime("%X"), "ollama"))
+
+    message_content = ""
+    async for response in get_response(text, model_name):
+        content = response.message.content
+        if not content:
+            continue
+
+        content = content.lstrip("\n")
+
+        if content.strip() == "<think>":
+            is_thinking = True
+            messages[-1] = ("Thinking...", messages[-1][1], messages[-1][2])
+        elif content.strip() == "</think>":
+            is_thinking = False
+        elif not is_thinking:
+            message_content += content
+            messages[-1] = (message_content, messages[-1][1], messages[-1][2])
+
+        chat_messages.refresh()
+
+
 class State:
     selected_model_name: str | None = None
 
 
 id_to_state: dict[str, State] = {}
+chat_tasks: set[Task[Any]] = set()
 
 
 @ui.page("/")
 async def main_page(client: Client) -> None:
     def send(text: ui.input) -> None:
+        if not text.value:
+            return
+
+        if text.value.lower() == "/clear":
+            messages.clear()
+            chat_messages.refresh()
+            return
+
         stamp = datetime.datetime.now(tz=datetime.UTC).strftime("%X")
-        messages.append((text.value, stamp))
+        messages.append((text.value, stamp, ui.context.client.id))
+
+        client_state = id_to_state[ui.context.client.id]
+        if not client_state.selected_model_name:
+            messages.append(("Please select a model", stamp, "ollama"))
+            chat_messages.refresh()
+            return
+
+        chat_tasks.add(create_task(process_response(text.value, client_state.selected_model_name)))
         text.value = ""
         chat_messages.refresh()
 
@@ -71,7 +114,7 @@ async def main_page(client: Client) -> None:
     await client.connected()
 
     with ui.column().classes("w-full max-w-2xl mx-auto items-stretch"):
-        chat_messages()
+        chat_messages(ui.context.client.id)
 
     if ui.context.client.id not in id_to_state:
         id_to_state[ui.context.client.id] = State()
@@ -107,7 +150,7 @@ async def test_run() -> None:
         elif content.strip() == "</think>":
             is_thinking = False
         elif not is_thinking:
-            logger.info(content, end="")
+            logger.info(content)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
